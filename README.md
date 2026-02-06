@@ -4,7 +4,6 @@
   <img src="/docs/simulation.gif" alt="Simulation" />
 </div>
 
-
 ## Table of Contents
 - [DRL-for-Mobile-Robot-Navigation-Using-ROS2](#drl-for-mobile-robot-navigation-using-ros2)
   - [Table of Contents](#table-of-contents)
@@ -66,7 +65,7 @@ pip install -r requirements.txt
     ```bash
     mkdir -p ~/drl_agent_ws/src
     cd ~/drl_agent_ws/src
-    git clone --recurse-submodules git@github.com:anurye/DRL-for-Mobile-Robot-Navigation-Using-ROS2.git .
+    git clone --recurse-submodules https://github.com/anurye/DRL-for-Mobile-Robot-Navigation-Using-ROS2.git .
     ```
 - Install dependencies:
     ```bash
@@ -138,15 +137,116 @@ ros2 run drl_agent test_td7_agent.py
 </table>
 
 
-<!-- ```txt
-@mastersthesis{Nurye-2024,
-author = {Ahmed Yesuf Nurye},
-title = {Mobile Robot Navigation in Dynamic Environments},
-year = {2024},
-month = {October},
-school = {Warsaw University of Technology},
-address = {Warsaw, Poland},
-number = {WUT4f18e5c2cd214a9cb555f730fa440901},
-keywords = {Mobile Robot Navigation, Deep Reinforcement Learning, ROS2, Gazebo},
-}
-``` -->
+要使用 **Docker** 运行 `DRL-for-Mobile-Robot-Navigation-Using-ROS2` 项目，可以借助项目中提供的 **`.devcontainer`** 配置（用于 VS Code Remote - Containers），也可以手动构建和运行容器。以下是两种主流方式：
+
+---
+
+### ✅ 方法一：通过 **VS Code + Dev Container**（推荐，适合开发）
+
+> 适用于在 VS Code 中直接打开项目并自动构建/启动 Docker 容器。
+
+#### 步骤：
+
+1. **安装前提**：
+   - 安装 [Docker](https://docs.docker.com/engine/install/)
+   - 安装 [VS Code](https://code.visualstudio.com/)
+   - 安装 VS Code 扩展：**[Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)**
+
+2. **打开项目**：
+   - 在 VS Code 中打开本项目根目录（包含 `.devcontainer/` 文件夹）
+   - 按 `F1` → 输入 `Dev Containers: Reopen in Container`
+   - VS Code 会自动：
+     - 构建镜像（基于 `althack/ros2:humble-full`）
+     - 安装 Gazebo 相关包
+     - 设置用户为 `ros`
+     - 自动 source ROS2 和 Gazebo 环境
+
+3. **在容器内操作**：
+   - 终端已配置好 ROS2 环境
+   - 可直接运行：
+     ```bash
+     cd /workspaces/DRL-for-Mobile-Robot-Navigation-Using-ROS2  # 或 ${containerWorkspaceFolder}
+     colcon build
+     source install/setup.bash
+     ros2 launch drl_agent_gazebo simulation.launch.py
+     ```
+
+> 💡 GUI 支持：`.devcontainer/devcontainer.json` 已配置 X11/Wayland 转发，Gazebo 界面可正常显示（需本地支持图形显示）。
+
+---
+
+### ✅ 方法二：**手动构建并运行 Docker 容器**
+
+如果你不用 VS Code，可手动操作：
+
+#### 1. 构建镜像
+```bash
+cd /path/to/project/.devcontainer
+docker build -t drl-ros2-humble \
+  --build-arg WORKSPACE=/root/drl_agent_ws \
+  -f Dockerfile .
+```
+
+> 注意：`WORKSPACE` 应与后续挂载的路径一致。
+
+#### 2. 启动容器（带 GUI 支持）
+```bash
+xhost +local:root  # 允许容器访问 X server（Linux）
+
+docker run -it \
+  --network=host \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  --security-opt apparmor=unconfined \
+  --ipc=host \
+  --volume=/tmp/.X11-unix:/tmp/.X11-unix \
+  --env DISPLAY=$DISPLAY \
+  --env LIBGL_ALWAYS_SOFTWARE=1 \
+  --volume $(pwd)/..:/root/drl_agent_ws/src \
+  --workdir /root/drl_agent_ws \
+  drl-ros2-humble \
+  bash
+```
+
+> 📝 说明：
+> - 将项目目录挂载到容器内的 `/root/drl_agent_ws/src`
+> - `LIBGL_ALWAYS_SOFTWARE=1` 启用软件渲染（避免 GPU 驱动问题）
+> - 若在 WSL2，需额外配置 X Server（如 VcXsrv）或使用 WSLg
+
+#### 3. 在容器内编译和运行
+```bash
+# 安装依赖（如有 .repos 文件）
+python3 .devcontainer/repos_to_submodules.py  # 将 .repos 转为 submodule（可选）
+
+# 安装 rosdep 依赖
+rosdep update
+rosdep install --from-path src -y --ignore-src
+
+# 编译
+colcon build
+
+# 启动仿真（新开终端或使用 tmux/screen）
+source install/setup.bash
+ros2 launch drl_agent_gazebo simulation.launch.py
+```
+
+---
+
+### 🔧 补充说明
+
+- **`.repos_to_submodules.py`**：  
+  该脚本将 `src/` 下的 `.repos` 文件（ROS2 的仓库清单）转换为 Git Submodule，便于版本管理。通常在克隆后运行一次即可。
+  
+- **GUI 显示问题**：  
+  如果 Gazebo 无法启动图形界面，确保：
+  - 主机允许 X11 转发（`xhost +`）
+  - 容器内设置了 `DISPLAY`
+  - 使用了 `--network=host` 和 X11 socket 挂载
+
+- **性能优化**：  
+  如需硬件加速（Intel iGPU），取消 `devcontainer.json` 中 `--device=/dev/dri` 的注释，并在 `docker run` 中添加该参数。
+
+---
+
+通过上述任一方法，你都可以在 **隔离、可复现的 Docker 环境**中使用该项目进行训练或测试。
+
